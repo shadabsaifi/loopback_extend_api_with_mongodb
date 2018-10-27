@@ -1,178 +1,107 @@
 'use strict';
-// PersistedModel
-const bcrypt = require('bcrypt');
-const saltRounds = 10;
-
+const common = require('../common');
+const constant = require('../constant');
 module.exports = (User) => {
-
   // 1st API for Signup
   User.signup = (userData, cb)=>{
-    var user = new User(userData)
-    user
-    .save()
-    .then(user=> cb(null, user))
-    .catch(err=> cb(err))
-  }
-
-  let signup = {
-    http:{ path:'/signup', verb:"post" },
-    accepts:{ arg:'data', type:"object", http:{ source:"body" } },
-    returns:{ arg:"data", type:"object" }
-  }
-
-  User.remoteMethod('signup', signup)
-
-
-
-
-  User.login = (userData, cb)=>{
-    let { password, email } = userData;
-    let query = { where:{ email:email } }
-    User.findOne(query)
-    .then(user=>{
-      if(user){
-        if(user.status != "ACTIVE"){
-          let query1 = { _id:user.id }
-          let OTP = Math.floor( 100000 + Math.random() * 900000)
-          let options = { OTP:OTP }
-          User.update(query1, options)
-          .then(update=> cb(null, "An OTP sent on your email id."))
-          .catch(err=> cb(err))
-        } 
-        else{
-          bcrypt.compare(password, user.password, function(err, res) {
-            if(res)
-              cb(null, 'You have successfully login.')
-            else
-              cb(null, 'Invalid credentials.')
-          });
-        }
-      }
+    User.create(userData, (err, user)=>{
+      if(err)
+        cb(err)
       else
-        cb(null, 'Invalid credentials.')
+        cb(null, user)
     })
-    .catch(err=> cb(err))
   }
 
-  let login = {
-    http:{ path:'/login', verb:'post' },
-    accepts:{ arg:'data', type:'object', http:{ source:'body' } },
-    returns:{ arg:'data', type:"string" }
-  }
-
-  User.remoteMethod('login', login)
-  
+  User.remoteMethod('signup', common.router('/signup', 'post', 'data'));
+  User.beforeRemote('signup',(context, user, next)=>common.beforeRemote(context, ['name','email','password'], next));
 
   // 2rd API for send OTP
   User.sendOTP = (email, cb) => {
-
-    let OTP = Math.floor(100000 + Math.random() * 900000)
-    let options = { OTP: OTP }
-    let query = { where: { "email": email } }
-    User.findOne(query).then(result=> {
-      if (result) {
-        User.update({ _id:result.id } , options, (err, user) => {
-          if (err)
-            cb(err)
+        let options = { OTP: constant.OTP };
+        let query = { where: { "email": email } };
+        User.findOne(query).then(user=> {
+          if (user) {
+            User.update({ _id:user.id } , options, (err, user) => {
+              if (err)
+                cb(err);
+              else
+                cb(null, constant.SEND_OTP);
+            })
+          } 
           else
-            cb(null, "An OTP hase been sent on you registered email address.")
+            cb(constant.EMAIL_ID_NOT_FOUND, null);
         })
-      } 
-      else
-        cb(null, "Invalid user id.")
-    })
-    .catch(err=> cb(err))
+        .catch(err=> cb(err));
   }
-  let sendOTP = { 
-      http: { path: '/sendOTP', verb: "post" },
-      accepts: { arg: 'email', type: "string", http: { source: "query" } },
-      returns: { arg: "message", type: "string" }
-  }
-  User.remoteMethod('sendOTP', sendOTP)
-
-
+ 
+  User.remoteMethod('sendOTP', common.router('/sendOTP', 'get', 'email'));
+  User.beforeRemote('sendOTP',(context, user, next)=>common.beforeRemote(context, ['email'], next));
 
   // 3th API for Verify OTP
-  User.verifyOTP = (data, cb) => {
-    let { email, OTP } = data
+  User.verifyOTP = (userData, cb) => {
+    let { email, OTP } = userData
     let query = { where: { email: email } }
     let options = { status: "ACTIVE" }
     User.findOne(query)
-    .then(result => {
-      if (result) {
-        if (result.OTP == data.OTP) {
-          User.update({_id:result.id}, options, (err, user) => {
+    .then(user => {
+      if (user) {
+        if (user.OTP == userData.OTP) {
+          User.update({_id:user.id}, options, (err, user) => {
             if (err)
-              cb(err)
+              cb(err);
             else
-              cb(null, "You have successfully login.")
+              cb(null, constant.SUCCESSFULLY_LOGIN);
           })
         } 
         else
-          cb(null, "Invalid OTP.")
+          cb(constant.INVALID_OTP ,null);
       } 
       else
-        cb(null, "Email id not regisetered.")
+        cb(constant.EMAIL_ID_NOT_FOUND, null);
     })
-    .catch(err=> cb(err))
+    .catch(err=> cb(err));
+    
   }
-  let verifyOTP = { 
-    http: { path: '/verifyOTP', verb: "post" },
-    accepts: { arg: 'data', type: "object", http: { source: "body" } },
-    returns: { arg: "message", type: "string" }
-  }
-  User.remoteMethod('verifyOTP', verifyOTP)
+  
+  User.remoteMethod('verifyOTP',  common.router('/verifyOTP', 'post', 'data'))
+  User.beforeRemote('verifyOTP',(context, user, next)=>common.beforeRemote(context, ['email', 'OTP'], next));
 
 
   // 4th API for User Detail
-
   User.getUser = function(id, cb){
     let query = {  
       where:{ _id:id },
       fields: { id: true, email: true, name: true } 
     }
-    User.findOne(query).then(result => {
-      if (result)
-        cb(null, result) 
+    User.findOne(query).then(user => {
+      if (user)
+        cb(null, user);
       else
-        cb(null, { message:"Invalid user id." })
+        cb(constant.USER_ID_NOT_FOUND, null);
     })
-    .catch(err=> cb(err))
+    .catch(err=> cb(err));
   }
 
-  let getUser = { 
-    http: { path: '/getUser', verb: "get" },
-    accepts: { arg: 'id', type: "string", http: { source: "query" } },
-    returns: { arg: "data", type: "object" }
-  }
-
-  User.remoteMethod('getUser', getUser)
+  User.remoteMethod('getUser',  common.router('/getUser', 'get', 'id'))
+  User.beforeRemote('getUser', (context, user, next)=>common.beforeRemote(context, ['id'], next));
 
 
   // 5th API for get ALl User list
-
   User.getAllUser = function(id, cb){
     let query = {  
       where:{ status:"ACTIVE" },
       fields: { id: true, email: true, name: true } 
     }
-    User.find(query).then(result => {
-      if (result)
-        cb(null, result) 
+    User.find(query).then(users => {
+      if (users)
+        cb(null, users) 
       else
-        cb(null, { message:"Invalid user id." })
+        cb(constant.USER_ID_NOT_FOUND, null)
     })
     .catch(err=> cb(err))
   }
 
-  let getAllUser = { 
-    http: { path: '/getAllUser', verb: "get" },
-    accepts: { arg: 'filter', type: "string", http: { source: "query" } },
-    returns: { arg: "data", type: "object" }
-  }
-
-  User.remoteMethod('getAllUser', getAllUser)
-  
+  User.remoteMethod('getAllUser', common.router('/getAllUser', 'post', 'data'))
 
   //6th API for Detete User
   User.deleteUser = (id, cb) => {
@@ -180,18 +109,15 @@ module.exports = (User) => {
     let options = { status:"DELETED" }
     User.update(query, options).then(user=> {
       if(user.count == 0)
-        cb(null, "User id not found.")
+        cb(constant.USER_ID_NOT_FOUND, null)
       else
-        cb(null, "You have successfully deleted this user.")
+        cb(null, constant.DELETE_USER)
     })
     .catch(err=> cb(err))
   }
-  let deleteUser = { 
-      http: { path: '/deleteUser', verb: "post" },
-      accepts: { arg: 'id', type: "string", http: { source: "query" } },
-      returns: { arg: "message", type: "string" }
-  }
-  User.remoteMethod('deleteUser', deleteUser)
+  
+  User.remoteMethod('deleteUser', common.router('/deleteUser', 'get', 'id'))
+  User.beforeRemote('deleteUser',(context, user, next)=>common.beforeRemote(context, ['id'], next));
 
 
   // 7th API for edit User Profile
@@ -200,56 +126,85 @@ module.exports = (User) => {
     let options = { name:userData.name }
     User.update(query , options).then(user => {
       if(user.count == 0)
-        cb(null, "User id not found.")
+        cb(constant.USER_ID_NOT_FOUND)
       else
-        cb(null, "Profile successfully updated.")
+        cb(null, constant.PROFILE_UPDATE)
     })
     .catch(err=> cb(err))
   }
-  let editUser = { 
-      http: { path: '/editUser', verb: "post" },
-      accepts: { arg: 'data', type: "object", http: { source: "body" } },
-      returns: { arg: "message", type: "string" }
-  }
-  User.remoteMethod('editUser', editUser)
+  
+  User.remoteMethod('editUser', common.router('/editUser', 'post', 'data'))
+  User.beforeRemote('editUser',(context, user, next)=>common.beforeRemote(context, ['id','name'], next));
 
 
   // 8th API for resetPassword Password
   User.resetPassword = (userData, cb) => {
     let { password, newPassword, email } = userData;
     let query = { where:{ email:email } }
-    User.findOne(query).then(result => {
-      if (result){
-        bcrypt.compare(password, result.password, function(err, res) {
-          if(!res)
-            cb(null, 'Password not match.')
+    User.findOne(query).then(user => {
+      if (user){
+        common.hashCompare(password, user.password, (err, match)=>{
+          if(err)
+            cb(err)
+          else if(!match)
+            cb(constant.PASSWORD_NOT_MATCH, null)
           else
-            bcrypt.genSalt(saltRounds, function(err, salt) {
-              bcrypt.hash(newPassword, salt, function(err, hash) {
+            common.createHash(newPassword, (err, hash)=>{
+              if(err)
+                cb(err)
+              else{
                 let options = { password:hash }
-                User.update({ _id:result.id }, options, (err, user) => {
+                User.update({ _id:user.id }, options, (err, user) => {
                   if (err)
                     cb(err)
                   else
-                    cb(null, "Password successfully change.")
+                    cb(null, constant.PASSWORD_CHANGE)
                 })
-              });
-            });
-        });
+              }  
+            })
+        })
       } 
       else
-        cb(null, "Email id not regisetered.")
+        cb(constant.EMAIL_ID_NOT_FOUND, null)
     })
     .catch(err=> cb(err))
   }
-  let resetPassword = { 
-      http: { path: '/resetPassword', verb: "post" },
-      accepts: { arg: 'data', type: "object", http: { source: "body" } },
-      returns: { arg: "message", type: "string" }
+
+  User.remoteMethod('resetPassword', common.router('/resetPassword', 'post', 'data'))
+  User.beforeRemote('resetPassword',(context, user, next)=>common.beforeRemote(context, ['email','password','newPassword'], next));
+
+
+  // 9th API for Login
+  User.login = (userData, cb)=>{ 
+    let { password, email } = userData;
+    let query = { where:{ email:email } };
+    User.findOne(query)
+    .then(user=>{
+      if(user){
+        if(user.status != "ACTIVE"){
+          let query = { _id:user.id };
+          let options = { OTP:constant.OTP };
+          User.update(query, options)
+          .then(update=> cb(null, constant.SEND_OTP))
+          .catch(err=> cb(err));
+        } 
+        else{
+          common.hashCompare(password, user.password, (err, match)=>{
+            if(err)
+              cb(err);
+            else if(match)
+              cb(null, user);
+            else
+              cb(constant.INVALID_CREDENTIALS);
+          });
+        }
+      }
+      else
+        cb(constant.INVALID_CREDENTIALS);
+    })
+    .catch(err=> cb(err));
   }
-  User.remoteMethod('resetPassword', resetPassword)
-
-
-
+  User.remoteMethod('login', common.router('/login', 'post', 'data'));
+  User.beforeRemote('login',(context, user, next)=>common.beforeRemote(context, ['email','password'], next));
 
 }
